@@ -1,18 +1,25 @@
 'use strict';
 
 const recast = require('recast');
-const debug = require('debug')('jarvis');
 const diff = require('deep-diff').diff;
 const R = require('ramda');
-const b = require('ast-node-builder');
+const { 
+  buildNode,
+  isValidNode,
+  getParentPath
+} = require('./lib/utils.js');
+
+const {
+  findQuery
+} = require('./lib/query.js');
 
 
 
 const input =  `
-foo.bar.baz()
+foo.bar();
 `;
 const output =  `
-foo.bar.baz(3)
+foo.bar.baz(a,b,c);
 `;
 
 const inputAst = recast.parse(input);
@@ -20,187 +27,18 @@ const outputAst = recast.parse(output);
 
 const differences = diff(inputAst, outputAst, {
   prefilter: function(path, key) {
-    return ~['loc', 'tokens'].indexOf(key);
+    return ~['loc', 'tokens', 'raw'].indexOf(key);
   }
 });
 
 console.log('differences', differences);
-
-function isValidNode(node) {
-  return node.type ? true : false;
-}
-
-function getParentPath(path) {
-  // Slicing the last element in array to reach the parent
-  return path.slice(0, -1);
-}
-
-function buildNode(node) {
-  let str =  '';
-  switch(node.type) {
-    case 'CallExpression':
-      str =  b.callExpression(node);
-      break;
-
-    case 'Identifier':
-      str = b.identifier(node);
-      break;
-
-    case 'Literal':
-      str = b.literal(node);
-      break;
-
-    default:
-      console.log('buildNode => ', node.type);
-      break;
-  }
-
-  return str;
-
-}
-
-// Build object query
-function objectQuery(node) {
-  let str = '';
-  switch(node.type) {
-    case 'Identifier':
-      str = ` object: { name: '${node.name}' } `;
-      break;
-
-    case 'CallExpression':
-      str = ` object: { ${calleeQuery(node.callee)} }, `;
-      break;
-
-    case 'MemberExpression':
-      str = ` object: {  ${objectQuery(node.object)} ,
-        property: { name: '${node.property.name}' }
-        } `;
-
-    default:
-      console.log('objectQuery::object => ', node.type);
-      break;
-  }
-
-  return str;
-}
-
-// Build callee query
-function calleeQuery(node) {
-  console.log(node.type);
-  let str = '';
-  if(node.type === 'MemberExpression') {
-    let { object, property } = node;
-    let obj = '';
-    let prop = '';
-
-    obj = objectQuery(object);
-    //switch(object.type) {
-      //case 'Identifier':
-        //obj = ` object: { name: '${object.name}' } `;
-        //break;
-
-      //case 'CallExpression':
-        //obj = `
-        //object: { ${calleeQuery(object.callee)} },
-        //property: { name: '${property.name}' },
-        //`;
-        //break;
-
-      //case 'MemberExpression':
-        //obj = `
-        //object: { ${objectQuery(object.object)} },
-        //property: { name: '${property.name}' },
-        //`;
-
-      //default:
-        //console.log('calleeQuery::object => ', object.type);
-        //break;
-    //}
-
-    switch(property.type) {
-      case 'Identifier':
-        prop = `property: { name: '${property.name}' }`;
-        break;
-
-      default:
-        console.log('calleeQuery::property => ', property.type);
-        break;
-    }
-
-    str =  `callee: {
-    ${obj},
-    ${prop}
-  }`;
-
-  } else if (node.type === 'CallExpression') {
-    str = ` callee: ${calleeQuery(node.callee)} `;
-
-  } else if (node.type === 'Identifier') {
-
-    str = ` callee: { name: '${node.name}' } `;
-  }
-  else {
-
-    console.error('Unknown node type in calleeQuery');
-  }
-
-  return str;
-
-}
-
-// Build callExpression query
-function buildCallExpressionQuery(node) {
-  let str = '';
-  switch(node.callee.type) {
-    case 'Identifier':
-      str = `root.find(j.CallExpression, {
-      ${calleeQuery(node.callee)} 
-      })`;
-      break;
-
-    case 'MemberExpression':
-      str = `root.find(j.CallExpression, {
-      ${calleeQuery(node.callee)} 
-      })`;
-      break;
-
-    default:
-      console.log('buildCallExpressionQuery => ', node.callee.type);
-      break;
-  }
-  return str;
-}
-// Build the jscodeshift find query from nodes
-function buildFindQuery(node) {
-  let str = '';
-  switch(node.type) {
-    case 'CallExpression':
-      str = buildCallExpressionQuery(node);       
-      break;
-
-    case 'MemberExpression':
-      str = `root.find(j.MemberExpression, {
-      object: { callee: { name: '${node.object.callee.name}' } },
-      property: { name: '${node.property.name}' }
-      })`;
-      break;
-
-    default:
-      break;
-
-  }
-
-  return str;
-
-}
-
 
 // find the node
 function findAndReplace(node, newNode) {
   let filter = '';
   switch(node.type) {
     case 'CallExpression':
-      filter = `${buildFindQuery(node)}      
+      filter = `${findQuery(node)}      
       .replaceWith(path => {
       return ${buildNode(newNode)}
       });
@@ -208,7 +46,7 @@ function findAndReplace(node, newNode) {
       break;
 
     case 'MemberExpression':
-      filter = `${buildFindQuery(node)}      
+      filter = `${findQuery(node)}      
       .replaceWith(path => {
       return ${buildNode(newNode)}
       });
@@ -216,14 +54,25 @@ function findAndReplace(node, newNode) {
       break;
 
     case 'Literal':
-      filter = `root.find(j.literal, {
-      name: ${node.name},
+      filter = `root.find(j.Literal, {
+      name: '${node.value}',
       })
       .replaceWith(path => {
       return ${buildNode(newNode)}
       });
       `;
       break;
+
+    case 'Identifier':
+      filter = `root.find(j.Identifier, {
+      name: '${node.name}',
+      })
+      .replaceWith(path => {
+      return ${buildNode(newNode)}
+      });
+      `;
+      break;
+
 
 
     default:
@@ -240,17 +89,17 @@ function findAndRemove(node) {
   let filter = '';
   switch(node.type) {
     case 'CallExpression':
-      filter = `${buildFindQuery(node)}      
+      filter = `${findQuery(node)}      
       .remove()`;
       break;
 
     case 'MemberExpression':
-      filter = `${buildFindQuery(node)}      
+      filter = `${findQuery(node)}      
       .remove()`;
       break;
 
     case 'Literal':
-      filter = `${buildFindQuery(node)}      
+      filter = `${findQuery(node)}      
       .remove()`;
       break;
 
@@ -263,6 +112,50 @@ function findAndRemove(node) {
   return filter;
 }
 
+function findValidParentPath(path, ast) {
+  let _path  = path;
+  while(!isValidNode(R.path(_path,ast))) {
+    _path = getParentPath(_path);
+  }
+  return _path;
+}
+function newArguments(diff) {
+  let str = '';
+  let { index, item, path } = diff;
+  let _path = getParentPath(path);
+  let query = findQuery(R.path(_path, inputAst));
+
+  // Insert at index-1 using array.splice
+  str = `${query}
+    .forEach(path => {
+    path.value.arguments.splice(${index}, 0, ${buildNode(item.rhs)});
+    });`;
+  
+  return str;
+}
+
+// Build object access path 
+// buildPath(['a','b','c']) => a.b.c
+function buildPath(items) {
+  return items.map(i => typeof i  === 'number' ? `[${i}]` : i)
+    .join('.')
+    .replace('.[', '[');
+}
+
+// Replace value in ast node
+function replaceValue(diff, ast) {
+  let str = '';
+  let _path =  findValidParentPath(diff.path, ast);
+  let newPath = R.difference(diff.path, _path);
+  let newValue = typeof diff.rhs === 'number' ? diff.rhs : `'${diff.rhs}'`;
+  str = `
+    ${findQuery(R.path(_path, ast))}
+    .forEach(path => {
+    ${buildPath(['path','value', ...newPath])} = ${newValue};
+
+    });`;
+  return str;
+}
 function generateTransform(differences) {
   let transformLogic = differences.map(diff => {
 
@@ -270,12 +163,19 @@ function generateTransform(differences) {
     let str = '';
     switch(diff.kind) {
       case 'A': // Array diff
-        str = findAndReplace(R.path(_path, inputAst), R.path(_path,outputAst));
+        str  = newArguments(diff);
+        //str = findAndReplace(R.path(_path, inputAst), R.path(_path,outputAst));
         break;
 
 
       case 'E':
-        str = findAndReplace(R.path(_path, inputAst), R.path(_path, outputAst));
+        //if(R.last(diff.path) === 'value') {
+        if(!isValidNode(R.path(diff.path, inputAst))) {
+          // Replace value
+          str = replaceValue(diff, inputAst);
+        } else {
+                str = findAndReplace(R.path(_path, inputAst), R.path(_path, outputAst));
+        }
         break;
 
 
