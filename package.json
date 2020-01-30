@@ -2,13 +2,16 @@
   "name": "jarvis-cli",
   "version": "1.0.0",
   "description": "The JARVIS cli for generating codemods",
-  "repository": "https://github.com/rajasegar/jarvis-cli",
+   "repository": "rajasegar/jarvis-cli",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint ."
   },
-  "author": "Rajasegar Chandran <rajasegar.c@gmail.com>",
+ "author": "Rajasegar Chandran @rajasegar",
+ "bin": {
+    "jarvis": "./bin/cli.js"
+  },
   "license": "MIT",
   "dependencies": {
     "ast-node-builder": "^1.0.4",
@@ -22,5 +25,17 @@
     "eslint-config-standard": "^14.1.0",
     "eslint-plugin-promise": "^4.2.1",
     "eslint-plugin-standard": "^4.0.1"
-  }
+  },
+   "engines": {
+    "node": ">=8.0.0"
+  },
+  "files": [
+    "/bin",
+    "/lib"
+  ],
+     "homepage": "https://github.com/rajasegar/jarvis-cli",
+  "keywords": [
+    "jarvis-cli"
+  ],
+
 }
