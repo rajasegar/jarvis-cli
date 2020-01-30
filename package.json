@@ -1,5 +1,5 @@
 {
-  "name": "jarvis-cli",
+  "name": "@rajasegar/jarvis-cli",
   "version": "1.0.0",
   "description": "The JARVIS cli for generating codemods",
    "repository": "rajasegar/jarvis-cli",

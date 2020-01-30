@@ -2,7 +2,7 @@
 
 ## Installation
 ```
-$ npm install jarvis-cli
+$ npm install @rajasegar/jarvis-cli
 ```
 
 ## Usage
